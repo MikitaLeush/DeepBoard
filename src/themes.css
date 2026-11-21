@@ -8,30 +8,30 @@
  */
 [data-theme="deepboard"] {
   color-scheme: light;
-  --color-background: #f9f7f3; /* copy paper */
-  --color-foreground: #1f1b16; /* marker ink */
-  --color-card: #fffefb;
-  --color-card-foreground: #1f1b16;
-  --color-popover: #fffefb;
-  --color-popover-foreground: #1f1b16;
-  --color-primary: #1f1b16;
-  --color-primary-foreground: #f9f7f3;
-  --color-secondary: #efebe3;
-  --color-secondary-foreground: #1f1b16;
-  --color-muted: #efebe3;
-  --color-muted-foreground: #6b655a;
-  --color-accent: #e6e0d4;
-  --color-accent-foreground: #1f1b16;
+  --color-background: #e8dac0; /* parchment */
+  --color-foreground: #2b1d11; /* marker ink */
+  --color-card: #f2e7d1;
+  --color-card-foreground: #2b1d11;
+  --color-popover: #f2e7d1;
+  --color-popover-foreground: #2b1d11;
+  --color-primary: #3b2814;
+  --color-primary-foreground: #f2e7d1;
+  --color-secondary: #dccbab;
+  --color-secondary-foreground: #2b1d11;
+  --color-muted: #dccbab;
+  --color-muted-foreground: #6b5638;
+  --color-accent: #d2bd97;
+  --color-accent-foreground: #2b1d11;
   --color-destructive: #b3261e;
-  --color-destructive-foreground: #fffefb;
-  --color-border: #ddd7ca;
-  --color-input: #ddd7ca;
-  --color-ring: #1f1b16;
+  --color-destructive-foreground: #f2e7d1;
+  --color-border: #bfa77d;
+  --color-input: #bfa77d;
+  --color-ring: #3b2814;
   --radius: 0.375rem;
   --shadow-card: 0 1px 2px 0 rgba(60, 40, 10, 0.1);
   --shadow-card-hover: 0 4px 14px 0 rgba(60, 40, 10, 0.14);
-  --color-shell: #efebe3;
-  --color-shell-panel: #fffefb;
+  --color-shell: #dccbab;
+  --color-shell-panel: #f2e7d1;
 
   /* The wall and what is stuck to it. */
   --color-kraft: #c7a57a; /* butcher paper */
