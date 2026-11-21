@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { ActionContext, ActionResult, ActionTools } from 'deepspace/worker'
 import { anchor, autoSides, centerIn, curvePath, isSide, nearestSide, stackOrder } from '../lib/geometry'
-import { boardActions, cleanGroupPatch, cleanPatch, MAX_NOTES } from './board'
+import { boardActions, cleanGroupPatch, cleanPatch, MAX_NOTES, MAX_X, MAX_Y } from './board'
 import { buildPlanPrompt } from './plan-prompt'
 
 type R = { recordId: string; createdBy: string; data: Record<string, unknown> }
@@ -213,9 +213,9 @@ describe('groups', () => {
 
   it('moving past the board edge clamps the group and the carried notes', async () => {
     await call('updateGroup', 'owner', { groupId: 'g', patch: { x: 99999, y: 99999 } })
-    expect(t.all('groups')[0].data).toMatchObject({ x: 3000 - 400, y: 2000 - 300 })
-    expect(Number(pos('in').x) + 100).toBeLessThanOrEqual(3000)
-    expect(Number(pos('edge').y) + 100).toBeLessThanOrEqual(2000)
+    expect(t.all('groups')[0].data).toMatchObject({ x: MAX_X - 400, y: MAX_Y - 300 })
+    expect(Number(pos('in').x) + 100).toBeLessThanOrEqual(MAX_X)
+    expect(Number(pos('edge').y) + 100).toBeLessThanOrEqual(MAX_Y)
   })
 
   it('moving needs the move switch too; retitle/resize/recolor only needs structure', async () => {
@@ -236,7 +236,7 @@ describe('groups', () => {
     }
     expect(await make({ x: 50, y: 60, w: 700, h: 400 })).toMatchObject({ x: 50, y: 60, w: 700, h: 400 })
     expect(await make({ x: 50, y: 60, w: 3, h: 2 })).toMatchObject({ w: 160, h: 120 })
-    expect(await make({ x: 2990, y: 1990, w: 400, h: 300 })).toMatchObject({ x: 2600, y: 1700 }) // pushed back inside
+    expect(await make({ x: MAX_X - 10, y: MAX_Y - 10, w: 400, h: 300 })).toMatchObject({ x: MAX_X - 400, y: MAX_Y - 300 }) // pushed back inside
     expect(await make({ x: 10, y: 10 })).toMatchObject({ w: 360, h: 260 }) // no size = default (plain right-click)
     denied(await call('addGroup', 'guest', { boardId: 'b1', x: 0, y: 0, w: 'big', h: 100 }))
   })

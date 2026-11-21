@@ -11,10 +11,11 @@ import { GroupBox, type GroupData } from './GroupBox'
 import { Cursors, PeerChips, useBoardPresence } from './Presence'
 import { Note, NOTE_H, NOTE_W, type Can, type NoteData } from './Note'
 
-export const BOARD_W = 3000
-export const BOARD_H = 2000
+// Same as MAX_X/MAX_Y on the server. Big enough to feel endless; zoom-out stops before the edge shows.
+export const BOARD_W = 20000
+export const BOARD_H = 14000
 const GROUP_DEFAULT = { w: 360, h: 260 }
-const ZOOM_MIN = 0.25
+const ZOOM_MIN = 0.1
 const ZOOM_MAX = 2
 const OPPOSITE: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }
 
@@ -41,6 +42,7 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
   // The arrow being dragged out from a note's attach point (null when not dragging).
   const [draft, setDraft] = useState<{ fromId: string; fromSide: Side; cursor: Xy; to: { id: string; side: Side } | null } | null>(null)
   const [selectedArrow, setSelectedArrow] = useState<string | null>(null)
+  const [focusNew, setFocusNew] = useState<string | null>(null)
   const [lasso, setLasso] = useState<Box | null>(null)
   // Board is drawn with transform: scale(zoom). Screen deltas divide by zoom; screen positions go through rect + zoom.
   const [zoom, setZoom] = useState(1)
@@ -50,8 +52,11 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
 
   const zoomTo = useCallback((next: number, mx?: number, my?: number) => {
     const el = scroller.current
-    const nz = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(next * 100) / 100))
-    if (!el || nz === zoomRef.current) return
+    if (!el) return
+    // Never zoom out far enough for the viewport to be larger than the board (no empty margin).
+    const floor = Math.max(ZOOM_MIN, el.clientWidth / BOARD_W, el.clientHeight / BOARD_H)
+    const nz = Math.min(ZOOM_MAX, Math.max(floor, Math.round(next * 100) / 100))
+    if (nz === zoomRef.current) return
     const px = mx ?? el.clientWidth / 2
     const py = my ?? el.clientHeight / 2
     keep.current = { bx: (el.scrollLeft + px) / zoomRef.current, by: (el.scrollTop + py) / zoomRef.current, mx: px, my: py }
@@ -131,10 +136,12 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
   }
   const addAt = (x: number, y: number) =>
     run('addNote', { boardId, x: clamp(x - NOTE_W / 2, BOARD_W - NOTE_W), y: clamp(y - NOTE_H / 2, BOARD_H - NOTE_H) })
+  // Add a note and drop the caret into it.
+  const addAndType = (x: number, y: number) => addAt(x, y).then((r) => r?.recordId && setFocusNew(r.recordId))
   const addInView = () => {
     const c = view()
     // Jitter so repeated clicks don't stack exactly.
-    addAt(c.x + (Math.random() - 0.5) * 120, c.y + (Math.random() - 0.5) * 120)
+    addAndType(c.x + (Math.random() - 0.5) * 120, c.y + (Math.random() - 0.5) * 120)
   }
   // A new group is centred on (x, y).
   const addGroupAt = (x: number, y: number) =>
@@ -423,7 +430,7 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
                   // Only the empty board: a double-click inside a note (selecting a word) must not add one.
                   if (e.target !== e.currentTarget) return
                   const r = e.currentTarget.getBoundingClientRect()
-                  addAt((e.clientX - r.left) / zoom, (e.clientY - r.top) / zoom)
+                  addAndType((e.clientX - r.left) / zoom, (e.clientY - r.top) / zoom)
                 }
               : undefined
           }
@@ -487,6 +494,7 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
                 ...noteBoxOf(n),
               }}
               can={can}
+              focusNow={focusNew === n.recordId}
               linkDrag={{ active: !!draft && draft.fromId !== n.recordId, hoverSide: draft?.to?.id === n.recordId ? draft.to.side : null }}
               onLinkStart={(side, e) => startLink(n, side, e)}
               typers={presence.peers.filter((p) => p.state.typing === n.recordId).map((p) => p.userName)}

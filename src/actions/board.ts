@@ -9,8 +9,8 @@ import { NOTE_COLORS, NOTE_MAX, NOTE_MIN, NOTE_TYPES, Z_LIMIT } from '../schemas
 // Everything except generatePlan (AI) lives here, with type-only SDK imports, so it can be unit-tested.
 
 export const MAX_TEXT = 500
-export const MAX_X = 3000
-export const MAX_Y = 2000
+export const MAX_X = 20000
+export const MAX_Y = 14000
 export const MAX_NOTES = 500
 export const MAX_GROUPS = 50
 export const NOTE_DEFAULT = { w: 180, h: 150 }

@@ -51,6 +51,8 @@ interface Props {
   note: NoteData
   can: Can
   typers: string[]
+  /** Just created by this user: put the caret in the note so they can type straight away. */
+  focusNow: boolean
   /** An arrow is being dragged: `active` shows all attach points, `hoverSide` is the one it would snap to here. */
   linkDrag: { active: boolean; hoverSide: Side | null }
   onLinkStart: (side: Side, e: React.PointerEvent) => void
@@ -65,7 +67,7 @@ interface Props {
   onDelete: () => void
 }
 
-export function Note({ note, can, typers, linkDrag, onLinkStart, onTyping, onMoveStart, onResizeStart, onFront, onBack, onType, onText, onColor, onDelete }: Props) {
+export function Note({ note, can, typers, focusNow, linkDrag, onLinkStart, onTyping, onMoveStart, onResizeStart, onFront, onBack, onType, onText, onColor, onDelete }: Props) {
   const [text, setText] = useState(note.text)
   const focused = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -73,6 +75,11 @@ export function Note({ note, can, typers, linkDrag, onLinkStart, onTyping, onMov
   const style = NOTE_STYLE[note.color] ?? NOTE_STYLE.yellow
   const TypeIcon = TYPE_UI[note.type].icon
   const [editing, setEditing] = useState(false)
+  const area = useRef<HTMLTextAreaElement>(null)
+  // Works whether the note mounts after the flag is set or was already on screen.
+  useEffect(() => {
+    if (focusNow && can.editText) area.current?.focus()
+  }, [focusNow, can.editText])
   // Empty notes show the textarea straight away; others show rendered Markdown until clicked.
   const showRendered = !editing && text.trim() !== ''
 
@@ -97,7 +104,7 @@ export function Note({ note, can, typers, linkDrag, onLinkStart, onTyping, onMov
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div
-        className={`flex h-6 shrink-0 items-center justify-between px-1.5 ${can.move ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        className={`flex h-6 shrink-0 items-center px-1.5 ${can.move ? 'cursor-grab active:cursor-grabbing' : ''}`}
         onPointerDown={can.move ? onMoveStart : undefined}
       >
         <div className="flex items-center gap-2">
@@ -112,41 +119,46 @@ export function Note({ note, can, typers, linkDrag, onLinkStart, onTyping, onMov
           >
             <TypeIcon weight="bold" className="size-3" aria-hidden /> {TYPE_UI[note.type].label}
           </button>
-          {can.move && (
-            <div className="flex gap-1 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
-              {NOTE_COLORS.map((c) => (
-                <button
-                  key={c}
-                  aria-label={`Color ${c}`}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => onColor(c)}
-                  className="size-3.5 rounded-full border border-foreground/30"
-                  style={{ background: NOTE_STYLE[c].bg }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
-          {can.move && (
-            <>
-              <button aria-label="Bring to front" title="Bring to front" onPointerDown={(e) => e.stopPropagation()} onClick={onFront} className="text-foreground/55 transition-colors duration-150 hover:text-foreground">
-                <ArrowLineUp weight="bold" className="size-3.5" />
-              </button>
-              <button aria-label="Send to back" title="Send to back" onPointerDown={(e) => e.stopPropagation()} onClick={onBack} className="text-foreground/55 transition-colors duration-150 hover:text-foreground">
-                <ArrowLineDown weight="bold" className="size-3.5" />
-              </button>
-            </>
-          )}
-          {can.addDelete && (
-            <button aria-label="Delete note" title="Delete note" onPointerDown={(e) => e.stopPropagation()} onClick={onDelete} className="text-foreground/55 transition-colors duration-150 hover:text-destructive">
-              <Trash weight="bold" className="size-3.5" />
-            </button>
-          )}
         </div>
       </div>
+      {/* Settings float outside the note (a 120-180px note can't hold them); flipped below near the board's top edge. */}
+      {(can.move || can.addDelete) && (
+        <div
+          className={`absolute left-0 z-30 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 ${note.y < 44 ? 'top-full pt-1' : 'bottom-full pb-1'}`}
+        >
+          <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 shadow-[0_6px_14px_-6px_rgba(60,40,10,0.6)]">
+            {can.move && (
+              <>
+                <div className="flex gap-1">
+                  {NOTE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      aria-label={`Color ${c}`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => onColor(c)}
+                      className="size-4 rounded-full border border-foreground/30"
+                      style={{ background: NOTE_STYLE[c].bg }}
+                    />
+                  ))}
+                </div>
+                <button aria-label="Bring to front" title="Bring to front" onPointerDown={(e) => e.stopPropagation()} onClick={onFront} className="text-foreground/55 transition-colors duration-150 hover:text-foreground">
+                  <ArrowLineUp weight="bold" className="size-4" />
+                </button>
+                <button aria-label="Send to back" title="Send to back" onPointerDown={(e) => e.stopPropagation()} onClick={onBack} className="text-foreground/55 transition-colors duration-150 hover:text-foreground">
+                  <ArrowLineDown weight="bold" className="size-4" />
+                </button>
+              </>
+            )}
+            {can.addDelete && (
+              <button aria-label="Delete note" title="Delete note" onPointerDown={(e) => e.stopPropagation()} onClick={onDelete} className="text-foreground/55 transition-colors duration-150 hover:text-destructive">
+                <Trash weight="bold" className="size-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {typers.length > 0 && (
-        <span className="pointer-events-none absolute -top-6 left-0 z-30 whitespace-nowrap rounded-[2px] bg-foreground px-1.5 py-0.5 text-[11px] text-background">
+        <span className="pointer-events-none absolute -bottom-7 left-0 z-30 whitespace-nowrap rounded-[2px] bg-foreground px-1.5 py-0.5 text-[11px] text-background">
           {typers.join(', ')} typing…
         </span>
       )}
@@ -168,6 +180,7 @@ export function Note({ note, can, typers, linkDrag, onLinkStart, onTyping, onMov
         </div>
       ) : (
       <textarea
+        ref={area}
         autoFocus={editing}
         value={text}
         readOnly={!can.editText}
