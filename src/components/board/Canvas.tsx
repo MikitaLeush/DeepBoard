@@ -435,15 +435,6 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
               : undefined
           }
         >
-          {/* The wall is three sheets of paper; masking tape covers the two seams. */}
-          {[1000, 2000].map((x) => (
-            <div
-              key={x}
-              aria-hidden="true"
-              className="pointer-events-none absolute top-0 h-full w-[18px] bg-tape/45 shadow-[inset_1px_0_0_rgba(60,40,10,0.14),inset_-1px_0_0_rgba(60,40,10,0.14)]"
-              style={{ left: x - 9 }}
-            />
-          ))}
           {groups.map((g) => {
             const b = groupBoxOf(g)
             return (
