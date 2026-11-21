@@ -175,6 +175,8 @@ export function Note({ note, can, typers, linkDrag, onLinkStart, onTyping, onMov
         placeholder={can.editText ? 'Write an idea…' : ''}
         onFocus={(e) => {
           focused.current = true
+          // Stay in edit mode while focused, or the first typed letter swaps the textarea for rendered Markdown.
+          setEditing(true)
           // Entering edit from the rendered view: caret at the end, not the start.
           if (editing) e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)
         }}

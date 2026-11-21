@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { BoundingBox, Plus } from '@phosphor-icons/react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { BoundingBox, MagnifyingGlassMinus, MagnifyingGlassPlus, Plus } from '@phosphor-icons/react'
 import { useQuery } from 'deepspace'
 import { Button, useToast } from '@/components/ui'
 import { callAction } from '../../lib/actions'
@@ -14,6 +14,9 @@ import { Note, NOTE_H, NOTE_W, type Can, type NoteData } from './Note'
 export const BOARD_W = 3000
 export const BOARD_H = 2000
 const GROUP_DEFAULT = { w: 360, h: 260 }
+const ZOOM_MIN = 0.25
+const ZOOM_MAX = 2
+const OPPOSITE: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }
 
 type Row = Omit<NoteData, 'recordId'> & { z?: number }
 type GRow = Omit<GroupData, 'recordId'>
@@ -39,6 +42,45 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
   const [draft, setDraft] = useState<{ fromId: string; fromSide: Side; cursor: Xy; to: { id: string; side: Side } | null } | null>(null)
   const [selectedArrow, setSelectedArrow] = useState<string | null>(null)
   const [lasso, setLasso] = useState<Box | null>(null)
+  // Board is drawn with transform: scale(zoom). Screen deltas divide by zoom; screen positions go through rect + zoom.
+  const [zoom, setZoom] = useState(1)
+  const zoomRef = useRef(1)
+  // Board point to keep under a screen point once the resized content has rendered.
+  const keep = useRef<{ bx: number; by: number; mx: number; my: number } | null>(null)
+
+  const zoomTo = useCallback((next: number, mx?: number, my?: number) => {
+    const el = scroller.current
+    const nz = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(next * 100) / 100))
+    if (!el || nz === zoomRef.current) return
+    const px = mx ?? el.clientWidth / 2
+    const py = my ?? el.clientHeight / 2
+    keep.current = { bx: (el.scrollLeft + px) / zoomRef.current, by: (el.scrollTop + py) / zoomRef.current, mx: px, my: py }
+    zoomRef.current = nz
+    setZoom(nz)
+  }, [])
+
+  useLayoutEffect(() => {
+    const el = scroller.current
+    const k = keep.current
+    if (!el || !k) return
+    el.scrollLeft = k.bx * zoom - k.mx
+    el.scrollTop = k.by * zoom - k.my
+    keep.current = null
+  }, [zoom])
+
+  // Ctrl/Cmd + wheel (and trackpad pinch) zooms around the pointer. Needs a non-passive listener to stop browser page zoom.
+  useEffect(() => {
+    const el = scroller.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      const r = el.getBoundingClientRect()
+      zoomTo(zoomRef.current * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [zoomTo])
 
   const run = useCallback(
     (name: string, params: Record<string, unknown>) =>
@@ -85,7 +127,7 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
 
   const view = () => {
     const el = scroller.current
-    return el ? { x: el.scrollLeft + el.clientWidth / 2, y: el.scrollTop + el.clientHeight / 2 } : { x: 200, y: 200 }
+    return el ? { x: (el.scrollLeft + el.clientWidth / 2) / zoom, y: (el.scrollTop + el.clientHeight / 2) / zoom } : { x: 200, y: 200 }
   }
   const addAt = (x: number, y: number) =>
     run('addNote', { boardId, x: clamp(x - NOTE_W / 2, BOARD_W - NOTE_W), y: clamp(y - NOTE_H / 2, BOARD_H - NOTE_H) })
@@ -112,8 +154,8 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
     if (!board) return
     const r = board.getBoundingClientRect()
     const at = (ev: { clientX: number; clientY: number }): Xy => ({
-      x: within(ev.clientX - r.left, 0, BOARD_W),
-      y: within(ev.clientY - r.top, 0, BOARD_H),
+      x: within((ev.clientX - r.left) / zoom, 0, BOARD_W),
+      y: within((ev.clientY - r.top) / zoom, 0, BOARD_H),
     })
     const o = at(e)
     let rect: Box = { x: o.x, y: o.y, w: 0, h: 0 }
@@ -145,10 +187,12 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
     e.preventDefault()
     const board = boardRef.current
     if (!board) return
-    const hit: { to: { id: string; side: Side } | null } = { to: null }
+    const hit: { to: { id: string; side: Side } | null; at: Xy } = { to: null, at: { x: 0, y: 0 } }
+    const start = anchor(noteBoxOf(n), side)
     const update = (ev: { clientX: number; clientY: number }) => {
       const r = board.getBoundingClientRect()
-      const c = { x: ev.clientX - r.left, y: ev.clientY - r.top }
+      const c = { x: (ev.clientX - r.left) / zoom, y: (ev.clientY - r.top) / zoom }
+      hit.at = c
       hit.to = null
       for (const m of records) {
         if (m.recordId === n.recordId) continue
@@ -167,7 +211,15 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
     const up = () => {
       const to = hit.to
       stop()
-      if (!to) return // released on empty board: cancelled
+      if (!to) {
+        // Released on empty board: new note there, linked to the source. A short drag (a plain click on the handle) does nothing.
+        if (!can.addDelete || Math.hypot(hit.at.x - start.x, hit.at.y - start.y) < 40) return
+        addAt(hit.at.x, hit.at.y).then((r) => {
+          if (!r?.recordId) return
+          run('addArrow', { boardId, fromId: n.recordId, toId: r.recordId, fromSide: side, toSide: OPPOSITE[side] }).then((a) => a?.recordId && setSelectedArrow(a.recordId))
+        })
+        return
+      }
       run('addArrow', { boardId, fromId: n.recordId, toId: to.id, fromSide: side, toSide: to.side }).then((r) => r?.recordId && setSelectedArrow(r.recordId)) // open its label box
     }
     const onKey = (ev: KeyboardEvent) => {
@@ -231,8 +283,8 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
     let last: Wh = { w: b.w, h: b.h }
     const move = (ev: PointerEvent) => {
       last = {
-        w: Math.round(within(b.w + ev.clientX - sx, lim.min.w, Math.min(lim.max.w, BOARD_W - b.x))),
-        h: Math.round(within(b.h + ev.clientY - sy, lim.min.h, Math.min(lim.max.h, BOARD_H - b.y))),
+        w: Math.round(within(b.w + (ev.clientX - sx) / zoom, lim.min.w, Math.min(lim.max.w, BOARD_W - b.x))),
+        h: Math.round(within(b.h + (ev.clientY - sy) / zoom, lim.min.h, Math.min(lim.max.h, BOARD_H - b.y))),
       }
       setSize((p) => ({ ...p, [id]: last }))
     }
@@ -253,7 +305,7 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
     const b = noteBoxOf(n)
     let last: Xy = { x: b.x, y: b.y }
     const move = (ev: PointerEvent) => {
-      last = { x: clamp(b.x + ev.clientX - sx, BOARD_W - b.w), y: clamp(b.y + ev.clientY - sy, BOARD_H - b.h) }
+      last = { x: clamp(b.x + (ev.clientX - sx) / zoom, BOARD_W - b.w), y: clamp(b.y + (ev.clientY - sy) / zoom, BOARD_H - b.h) }
       setPos((p) => ({ ...p, [n.recordId]: last }))
     }
     const up = () => {
@@ -288,7 +340,7 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
     const ids = [g.recordId, ...members.map((m) => m.id)]
     let d: Xy = { x: 0, y: 0 }
     const move = (ev: PointerEvent) => {
-      d = { x: Math.round(within(ev.clientX - sx, dxMin, dxMax)), y: Math.round(within(ev.clientY - sy, dyMin, dyMax)) }
+      d = { x: Math.round(within((ev.clientX - sx) / zoom, dxMin, dxMax)), y: Math.round(within((ev.clientY - sy) / zoom, dyMin, dyMax)) }
       setPos((p) => {
         const n = { ...p, [g.recordId]: { x: gb.x + d.x, y: gb.y + d.y } }
         for (const m of members) n[m.id] = { x: m.b.x + d.x, y: m.b.y + d.y }
@@ -336,12 +388,16 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
   return (
     <div className="relative h-full">
       <div ref={scroller} className="h-full overflow-auto">
+        {/* Sized to the scaled board so the scroll area matches what is drawn. */}
+        <div style={{ width: BOARD_W * zoom, height: BOARD_H * zoom }}>
         <div
           ref={boardRef}
           className="relative"
           style={{
             width: BOARD_W,
             height: BOARD_H,
+            transform: `scale(${zoom})`,
+            transformOrigin: '0 0',
             // Butcher paper with a faint dot grid to line things up by.
             backgroundColor: 'var(--color-kraft)',
             backgroundImage: 'radial-gradient(circle, rgba(60,40,10,0.2) 1.2px, transparent 1.2px)',
@@ -354,7 +410,7 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
           }}
           onPointerMove={(e) => {
             const r = e.currentTarget.getBoundingClientRect()
-            presence.onMove({ x: Math.round(e.clientX - r.left), y: Math.round(e.clientY - r.top) })
+            presence.onMove({ x: Math.round((e.clientX - r.left) / zoom), y: Math.round((e.clientY - r.top) / zoom) })
           }}
           onPointerLeave={presence.onLeave}
           onContextMenu={(e) => {
@@ -367,7 +423,7 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
                   // Only the empty board: a double-click inside a note (selecting a word) must not add one.
                   if (e.target !== e.currentTarget) return
                   const r = e.currentTarget.getBoundingClientRect()
-                  addAt(e.clientX - r.left, e.clientY - r.top)
+                  addAt((e.clientX - r.left) / zoom, (e.clientY - r.top) / zoom)
                 }
               : undefined
           }
@@ -460,13 +516,25 @@ export function Canvas({ boardId, can }: { boardId: string; can: Can }) {
             </p>
           )}
         </div>
+        </div>
       </div>
       <PeerChips peers={presence.peers} />
       {draft && (
         <div role="status" className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-md bg-foreground px-3.5 py-1.5 text-sm text-background shadow-[0_8px_18px_-8px_rgba(31,27,22,0.7)]">
-          Drop on a note to link it. Press Esc to cancel.
+          Drop on a note to link it{can.addDelete ? ', or on empty space for a new note' : ''}. Press Esc to cancel.
         </div>
       )}
+      <div className="absolute bottom-5 right-5 flex items-center gap-1 rounded-lg border border-border bg-card p-1 shadow-[0_10px_24px_-10px_rgba(60,40,10,0.7)]">
+        <Button size="sm" variant="ghost" aria-label="Zoom out" title="Zoom out (Ctrl + scroll)" onClick={() => zoomTo(zoom / 1.25)}>
+          <MagnifyingGlassMinus weight="bold" className="size-4" />
+        </Button>
+        <Button size="sm" variant="ghost" aria-label="Reset zoom" title="Reset zoom" onClick={() => zoomTo(1)} className="w-14 tabular-nums">
+          {Math.round(zoom * 100)}%
+        </Button>
+        <Button size="sm" variant="ghost" aria-label="Zoom in" title="Zoom in (Ctrl + scroll)" onClick={() => zoomTo(zoom * 1.25)}>
+          <MagnifyingGlassPlus weight="bold" className="size-4" />
+        </Button>
+      </div>
       {(can.addDelete || can.structure) && (
         <div className="absolute bottom-5 left-5 flex gap-1 rounded-lg border border-border bg-card p-1 shadow-[0_10px_24px_-10px_rgba(60,40,10,0.7)]">
           {can.addDelete && (
